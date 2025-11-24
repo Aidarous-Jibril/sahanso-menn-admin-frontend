@@ -1,0 +1,45 @@
+name: Build & Deploy Admin (Next.js → Azure App Service)
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    env:
+      NPM_CONFIG_PRODUCTION: "false"
+      NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_PUBLIC_API_URL: https://menn-api-aidarous.azurewebsites.net
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - run: npm ci --omit=dev=false
+      - run: npm run build
+
+      - run: |
+          rm -rf deploy
+          mkdir -p deploy/.next/static
+          cp -r .next/standalone/* deploy/
+          cp -r .next/static/* deploy/.next/static/
+          [ -d public ] && cp -r public deploy/public || true
+          cat > deploy/package.json <<'JSON'
+          {
+            "name": "menn-admin-frontend",
+            "private": true,
+            "scripts": { "start": "node server.js" }
+          }
+          JSON
+          (cd deploy && zip -r ../site.zip . -x ".git/*" ".github/*")
+
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: menn-admin-aidarous
+          package: site.zip
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE }}
